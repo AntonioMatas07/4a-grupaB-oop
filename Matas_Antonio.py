@@ -52,6 +52,24 @@ class ImenikApp:
         email = self.entry_email.get().strip()
         telefon = self.entry_telefon.get().strip()
 
+
+        if not (ime and email and telefon):
+            print("Sva polja moraju biti popunjena")
+            return
+
+        if len(ime)<=2:
+            print("Ime mora imati najmanje 3 slova")
+            return
+        
+       
+        if "@" not in email:
+            print("Email mora sadržavati znak @")
+            return
+        
+        if not (telefon.isdigit() and len(telefon.replace(" ",""))==10):
+            print("Broj mora sadržavati 10 znakova")
+            return
+
         if ime and email and telefon:
             kontakt = Kontakt(ime, email, telefon)
             self.kontakti.append(kontakt)
@@ -59,6 +77,10 @@ class ImenikApp:
             self.entry_ime.delete(0, tk.END)
             self.entry_email.delete(0, tk.END)
             self.entry_telefon.delete(0, tk.END)
+
+
+
+
 
     def osvjezi_prikaz(self):
         self.listbox.delete(0, tk.END)
@@ -71,7 +93,8 @@ class ImenikApp:
         for k in self.kontakti:
             writer.writerow([k.ime, k.email, k.telefon])
         f.close()
-
+        self.osvjezi_prikaz()
+        
     def ucitaj_kontakte(self):
         """Učitaj kontakte samo ako datoteka postoji."""
         self.kontakti.clear()
