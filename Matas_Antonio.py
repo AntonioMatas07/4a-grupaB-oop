@@ -66,6 +66,13 @@ class ImenikApp:
             print("Email mora sadržavati znak @")
             return
         
+        if ".com" not in email and "skole.hr" not in email and ".hr" not in email:
+            print("Nedostaju potrebni znakovi")
+            return
+
+
+
+        
         if not (telefon.isdigit() and len(telefon.replace(" ",""))==10):
             print("Broj mora sadržavati 10 znakova")
             return
