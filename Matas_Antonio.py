@@ -1,122 +1,197 @@
+# Kratka provjera – Evidencija učenika (CSV fokus, XML bonus)
+# Vrijeme: 20 min
+
+
+#1. Zato jer trajna memorija osigurava da podaci ostaju spremljeni čak i kada je računalo isključeno odnosno kada program ne radi.
+#2. CSV koristi jednostavnu strukturu i idealan je za pohranu velikih skupova podataka, a XML koristi složenu strukturu s oznakama zbog čega je pogodniji za složene podatke, ali to rezultira većim datotekama i složenijom obradom.
+#3. Konstrukcija with open(...) as f: automatski otvara i zatvara datoteku. Ona osigurava da se datoteka zatvori nakon završenog rada čak i u slučaju pogreške što čini kod sigurnijim i jednostavnijim.
+#4. Brisanje Listboxa osigurava da se novi podaci ne dupliciraju ili miješaju sa starijima. Čistimo ga da naše korisničko iskustvo bude bolje.
+#5. Prednosti su jednostavnost i pouzdanost. DictReader pravilno prepoznaje i obrađuje i podatke koji sadrže zareze što split ne može. Osim toga, DictReader automatski pretvara redove u rječnike s ključevima iz zaglavlja, što kod čini čitljivijim i otpornijim na promjene u redoslijedu stupaca.
 
 import tkinter as tk
+from tkinter import messagebox
 import csv
-import os
+# XML bonus:
+import xml.etree.ElementTree as ET
 
-
-class Kontakt:
-    def __init__(self, ime, email, telefon):
+# --- MODEL ---
+class Ucenik:
+    def __init__(self, ime, prezime, razred):
         self.ime = ime
-        self.email = email
-        self.telefon = telefon
+        self.prezime = prezime
+        self.razred = razred
 
     def __str__(self):
-        return f"{self.ime} - {self.email} ({self.telefon})"
+        return f"{self.ime} {self.prezime} ({self.razred})"
 
 
-class ImenikApp:
+# --- APP ---
+class EvidencijaApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("Jednostavni digitalni imenik")
+        self.root.title("Evidencija učenika – provjera")
+        self.root.geometry("600x400")
+        self.root.columnconfigure(0, weight=1)
+        self.root.rowconfigure(1, weight=1)
 
-        self.kontakti = [] 
+        self.ucenici = []
+        self.odabrani_index = None
 
-        
-        tk.Label(root, text="Ime i prezime:").grid(row=0, column=0)
-        tk.Label(root, text="Email:").grid(row=1, column=0)
-        tk.Label(root, text="Telefon:").grid(row=2, column=0)
+        self.kreiraj_gui()
 
-        self.entry_ime = tk.Entry(root)
-        self.entry_email = tk.Entry(root)
-        self.entry_telefon = tk.Entry(root)
+    def kreiraj_gui(self):
+        # Unos okvir
+        unos = tk.Frame(self.root, padx=10, pady=10)
+        unos.grid(row=0, column=0, sticky="EW")
+        unos.columnconfigure(1, weight=1)
 
-        self.entry_ime.grid(row=0, column=1)
-        self.entry_email.grid(row=1, column=1)
-        self.entry_telefon.grid(row=2, column=1)
+        tk.Label(unos, text="Ime:").grid(row=0, column=0, sticky="W")
+        self.e_ime = tk.Entry(unos); self.e_ime.grid(row=0, column=1, sticky="EW")
 
-        tk.Button(root, text="Dodaj kontakt", command=self.dodaj_kontakt).grid(row=3, column=0, columnspan=2, pady=5)
+        tk.Label(unos, text="Prezime:").grid(row=1, column=0, sticky="W")
+        self.e_prezime = tk.Entry(unos); self.e_prezime.grid(row=1, column=1, sticky="EW")
 
-        
-        self.listbox = tk.Listbox(root, width=40, height=10)
-        self.listbox.grid(row=4, column=0, columnspan=2, pady=5)
+        tk.Label(unos, text="Razred:").grid(row=2, column=0, sticky="W")
+        self.e_razred = tk.Entry(unos); self.e_razred.grid(row=2, column=1, sticky="EW")
 
-        
-        tk.Button(root, text="Spremi kontakte", command=self.spremi_kontakte).grid(row=5, column=0, pady=5)
-        tk.Button(root, text="Učitaj kontakte", command=self.ucitaj_kontakte).grid(row=5, column=1, pady=5)
+        gumbi = tk.Frame(unos); gumbi.grid(row=3, column=0, columnspan=2, pady=8)
+        tk.Button(gumbi, text="Dodaj učenika", command=self.dodaj_ucenika).pack(side="left", padx=4)
 
-        
-        self.ucitaj_kontakte()
+        # TODO (B-3): Poveži gumbe s odgovarajućim metodama
+        tk.Button(gumbi, text="Spremi CSV", command=self.spremi_u_csv).pack(side="left", padx=4)
+        tk.Button(gumbi, text="Učitaj CSV", command=self.ucitaj_iz_csv).pack(side="left", padx=4)
 
-    def dodaj_kontakt(self):
-        ime = self.entry_ime.get().strip()
-        email = self.entry_email.get().strip()
-        telefon = self.entry_telefon.get().strip()
+        # BONUS XML
+        tk.Button(gumbi, text="Spremi XML", command=self.spremi_u_xml).pack(side="left", padx=4)
+        tk.Button(gumbi, text="Učitaj XML", command=self.ucitaj_iz_xml).pack(side="left", padx=4)
 
+        # Prikaz okvir
+        prikaz = tk.Frame(self.root, padx=10, pady=10)
+        prikaz.grid(row=1, column=0, sticky="NSEW")
+        prikaz.columnconfigure(0, weight=1)
+        prikaz.rowconfigure(0, weight=1)
 
-        if not (ime and email and telefon):
-            print("Sva polja moraju biti popunjena")
+        self.lb = tk.Listbox(prikaz)
+        self.lb.grid(row=0, column=0, sticky="NSEW")
+
+        sc = tk.Scrollbar(prikaz, orient="vertical", command=self.lb.yview)
+        sc.grid(row=0, column=1, sticky="NS")
+        self.lb.configure(yscrollcommand=sc.set)
+
+        self.lb.bind("<<ListboxSelect>>", self.odaberi)
+
+    # --- Pomoćne ---
+    def osvjezi(self):
+        self.lb.delete(0, tk.END)
+        for u in self.ucenici:
+            self.lb.insert(tk.END, str(u))
+
+    def ocisti_unos(self):
+        self.e_ime.delete(0, tk.END)
+        self.e_prezime.delete(0, tk.END)
+        self.e_razred.delete(0, tk.END)
+
+    # --- Akcije ---
+    def dodaj_ucenika(self):
+        ime = self.e_ime.get().strip()
+        prezime = self.e_prezime.get().strip()
+        razred = self.e_razred.get().strip()
+        if not (ime and prezime and razred):
+            messagebox.showwarning("Upozorenje", "Sva polja moraju biti popunjena.")
             return
+        self.ucenici.append(Ucenik(ime, prezime, razred))
+        self.osvjezi()
+        self.ocisti_unos()
 
-        if len(ime)<=2:
-            print("Ime mora imati najmanje 3 slova")
+    def odaberi(self, _e):
+        sel = self.lb.curselection()
+        if not sel: 
+            self.odabrani_index = None
             return
-        
-       
-        if "@" not in email:
-            print("Email mora sadržavati znak @")
-            return
-        
-        if ".com" not in email and "skole.hr" not in email and ".hr" not in email:
-            print("Nedostaju potrebni znakovi")
-            return
+        self.odabrani_index = sel[0]
+
+    # --- CSV ---
+    def spremi_u_csv(self):
+        """TODO (B-1): Zapiši sve učenike u 'ucenici.csv' pomoću csv.DictWriter.
+        Zaglavlja: ime, prezime, razred.
+        """
+        # Primjerni koraci (možeš izmijeniti):
+        # with open("ucenici.csv", "w", newline="", encoding="utf-8") as f:
+        #     writer = csv.DictWriter(f, fieldnames=["ime", "prezime", "razred"])
+        #     writer.writeheader()
+        #     for u in self.ucenici:
+        #         writer.writerow({"ime": u.ime, "prezime": u.prezime, "razred": u.razred})
+        try:
+            with open("ucenici.csv", "w", newline="", encoding="utf-8") as f:
+                writer = csv.DictWriter(f, fieldnames=["ime", "prezime", "razred"])
+                writer.writeheader()
+                for u in self.ucenici:
+                    writer.writerow({"ime": u.ime, "prezime": u.prezime, "razred": u.razred})
+            messagebox.showinfo("Info", "Podaci su spremljeni u ucenici.csv")
+        except Exception as e:
+            messagebox.showerror("Greška", f"Nije moguće spremiti CSV: {e}")
+
+    def ucitaj_iz_csv(self):
+        """TODO (B-2): Učitaj iz 'ucenici.csv' pomoću csv.DictReader.
+        1) Očisti self.ucenici i Listbox.
+        2) Za svaki red u CSV-u, kreiraj objekt Ucenik i dodaj u listu.
+        3) Osvježi prikaz. Obradi FileNotFoundError.
+        """
+        try:
+            self.ucenici.clear()
+            self.lb.delete(0, tk.END)
+            with open("ucenici.csv", "r", newline="", encoding="utf-8") as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    self.ucenici.append(Ucenik(row["ime"], row["prezime"], row["razred"]))
+            self.osvjezi()
+            messagebox.showinfo("Info", "Podaci su učitani iz ucenici.csv")
+        except FileNotFoundError:
+            messagebox.showwarning("Upozorenje", "Datoteka ucenici.csv ne postoji.")
+        except Exception as e:
+            messagebox.showerror("Greška", f"Nije moguće učitati CSV: {e}")
+
+    # --- XML (BONUS) ---
+    def spremi_u_xml(self):
+        """BONUS: Spremi u 'ucenici.xml' koristeći ElementTree."""
+        try:
+            root = ET.Element("evidencija")
+            for u in self.ucenici:
+                e = ET.SubElement(root, "ucenik")
+                ET.SubElement(e, "ime").text = u.ime
+                ET.SubElement(e, "prezime").text = u.prezime
+                ET.SubElement(e, "razred").text = u.razred
+            tree = ET.ElementTree(root)
+            tree.write("ucenici.xml", encoding="utf-8", xml_declaration=True)
+            messagebox.showinfo("Info", "XML spremljen u ucenici.xml")
+        except Exception as e:
+            messagebox.showerror("Greška", f"Nije moguće spremiti XML: {e}")
+
+    def ucitaj_iz_xml(self):
+        """BONUS: Učitaj iz 'ucenici.xml' koristeći ElementTree."""
+        try:
+            self.ucenici.clear()
+            self.lb.delete(0, tk.END)
+            tree = ET.parse("ucenici.xml")
+            root = tree.getroot()
+            for e in root.findall("ucenik"):
+                ime = e.findtext("ime", default="")
+                prezime = e.findtext("prezime", default="")
+                razred = e.findtext("razred", default="")
+                if ime and prezime and razred:
+                    self.ucenici.append(Ucenik(ime, prezime, razred))
+            self.osvjezi()
+            messagebox.showinfo("Info", "XML učitan iz ucenici.xml")
+        except FileNotFoundError:
+            messagebox.showwarning("Upozorenje", "Datoteka ucenici.xml ne postoji.")
+        except Exception as e:
+            messagebox.showerror("Greška", f"Nije moguće učitati XML: {e}")
 
 
+if __name__ == "__main__":
+    root = tk.Tk()
+    app = EvidencijaApp(root)
+    root.mainloop()
 
-        
-        if not (telefon.isdigit() and len(telefon.replace(" ",""))==10):
-            print("Broj mora sadržavati 10 znakova")
-            return
-
-        if ime and email and telefon:
-            kontakt = Kontakt(ime, email, telefon)
-            self.kontakti.append(kontakt)
-            self.osvjezi_prikaz()
-            self.entry_ime.delete(0, tk.END)
-            self.entry_email.delete(0, tk.END)
-            self.entry_telefon.delete(0, tk.END)
-
-
-
-
-
-    def osvjezi_prikaz(self):
-        self.listbox.delete(0, tk.END)
-        for k in self.kontakti:
-            self.listbox.insert(tk.END, str(k))
-
-    def spremi_kontakte(self):
-        f = open("kontakti.csv", "w", newline="", encoding="utf-8")
-        writer = csv.writer(f)
-        for k in self.kontakti:
-            writer.writerow([k.ime, k.email, k.telefon])
-        f.close()
-        self.osvjezi_prikaz()
-        
-    def ucitaj_kontakte(self):
-        """Učitaj kontakte samo ako datoteka postoji."""
-        self.kontakti.clear()
-        if "kontakti.csv" in os.listdir():
-            f = open("kontakti.csv", "r", encoding="utf-8")
-            reader = csv.reader(f)
-            for red in reader:
-                if len(red) == 3:
-                    ime, email, telefon = red
-                    self.kontakti.append(Kontakt(ime, email, telefon))
-            f.close()
-            self.osvjezi_prikaz()
-
-
-root = tk.Tk()
-app = ImenikApp(root)
-root.mainloop()
+                                                               
 
